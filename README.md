@@ -6,7 +6,7 @@ Gedis is a simple in-memory key-value store written in Go, similar to Redis. It 
 
 ### Method 1: Download the Pre-built Application
 
-You can download pre-built versions of the application for Windows or Linux from the [releases](LINK_TO_RELEASES_PAGE) page.
+You can download pre-built versions of the application for Windows or Linux from the [releases](https://github.com/MarkHmnv/gedis/releases) page.
 
 ### Method 2: Build and Run from Source
 
