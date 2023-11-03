@@ -15,24 +15,30 @@ To run the server from the source code, you'll need to have [Go installed](https
 go run main.go
 ```
 
+### Connect with Telnet
+Once the server is running, connect to it using a Telnet client. For example, you can use the built-in Telnet client in Windows or Linux:
+```shell
+telnet 127.0.0.1 6379
+```
+
 ## Comands
 
 - PING - Tests if the service is running. If the service is online, it prints "PONG". Use it as follows:
 ```shell
-% gedis-cli PING
+gedis-cli> PING
 ```
 - ECHO - Prints the provided message back to the user:
 ```shell
-% gedis-cli ECHO Hello, World!
+gedis-cli> ECHO Hello, World!
 ```
 - SET - Sets the provided key to the provided value. It supports setting an optional expiry time for the key. The expiry can be set in seconds using EX flag or milliseconds using PX flag:
 ```shell
-% gedis-cli SET myKey myValue // Without expiry time
-% gedis-cli SET myKey myValue EX 10 // With expiry time in seconds
-% gedis-cli SET myKey myValue PX 1000 // With expiry time in milliseconds
+gedis-cli> SET myKey myValue // Without expiry time
+gedis-cli> SET myKey myValue EX 10 // With expiry time in seconds
+gedis-cli> SET myKey myValue PX 1000 // With expiry time in milliseconds
 ```
 - GET - Retrieves the value of the provided key:
 ```shell
-% gedis-cli GET myKey
+gedis-cli> GET myKey
 ```
 Do note that if a key with an expiry time is accessed after it has expired, it will return (nil).
