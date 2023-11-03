@@ -3,12 +3,16 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"os"
+	"log"
+	"net"
 	"strings"
 	"time"
 )
 
-const cleanupInterval = 10 * time.Second
+const (
+	CleanupInterval = 10 * time.Second
+	Port            = "6379"
+)
 
 type Cache struct {
 	Data   map[string]string
@@ -23,7 +27,7 @@ func NewCache() *Cache {
 }
 
 func (c *Cache) StartCleanup() {
-	for range time.Tick(cleanupInterval) {
+	for range time.Tick(CleanupInterval) {
 		now := time.Now()
 		for k, v := range c.Expiry {
 			if now.After(v) {
@@ -35,42 +39,69 @@ func (c *Cache) StartCleanup() {
 }
 
 func main() {
+	ln, err := net.Listen("tcp", ":"+Port)
+	if err != nil {
+		log.Fatalf("Could not listen to Port %s: %s\n", Port, err)
+	}
+	log.Printf("Listening to TCP connections on Port %s ...\n", Port)
+
 	cache := NewCache()
 	go cache.StartCleanup()
 
-	reader := bufio.NewReader(os.Stdin)
-
 	for {
-		fmt.Print("% gedis-cli ")
-		command, _ := reader.ReadString('\n')
-		command = strings.TrimSuffix(command, "\n")
-		args := strings.Fields(command)
-		if len(args) < 2 {
-			fmt.Println("Usage: command \"argument\"")
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println(err)
 			continue
 		}
-		err := runCommand(args, cache)
+		go handleConnection(conn, cache)
+	}
+}
+
+func handleConnection(conn net.Conn, cache *Cache) {
+	defer func() {
+		conn.Close()
+		log.Printf("%s has disconnected.", conn.RemoteAddr())
+	}()
+	log.Printf("%s has connected.", conn.RemoteAddr())
+
+	reader := bufio.NewReader(conn)
+	for {
+		fmt.Fprint(conn, "gedis-cli> ")
+		command, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Println(err)
+			break
+		}
+		command = strings.TrimSuffix(command, "\n")
+		args := strings.Fields(command)
+
+		if len(args) < 1 {
+			fmt.Fprintln(conn, "Usage: command \"argument\"")
+			continue
+		}
+
+		err = runCommand(args, cache, conn)
+		if err != nil {
+			fmt.Fprintln(conn, err)
 		}
 	}
 }
 
-func runCommand(args []string, cache *Cache) error {
+func runCommand(args []string, cache *Cache, conn net.Conn) error {
 	switch args[0] {
 	case "PING":
-		fmt.Println("PONG")
+		fmt.Fprintln(conn, "PONG")
 	case "ECHO":
-		echoMessage(args[1:])
+		echoMessage(args[1:], conn)
 	case "SET":
 		res, err := setKey(args, cache)
 		if err != nil {
 			return err
 		}
-		fmt.Println(res)
+		fmt.Fprintln(conn, res)
 	case "GET":
 		res := getKey(args, cache)
-		fmt.Println(res)
+		fmt.Fprintln(conn, res)
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -78,9 +109,9 @@ func runCommand(args []string, cache *Cache) error {
 	return nil
 }
 
-func echoMessage(args []string) {
+func echoMessage(args []string, conn net.Conn) {
 	message := strings.Join(args, " ")
-	fmt.Println(message)
+	fmt.Fprintln(conn, message)
 }
 
 func setKey(args []string, cache *Cache) (string, error) {
