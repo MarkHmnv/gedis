@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,7 @@ const (
 type Cache struct {
 	Data   map[string]string
 	Expiry map[string]time.Time
+	mu     sync.RWMutex
 }
 
 func NewCache() *Cache {
@@ -26,15 +28,42 @@ func NewCache() *Cache {
 	}
 }
 
+func (c *Cache) set(key string, value string, expiry time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Data[key] = value
+	if !expiry.IsZero() {
+		c.Expiry[key] = expiry
+	}
+}
+
+func (c *Cache) get(key string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	value, exists := c.Data[key]
+	if !exists {
+		return "", false
+	}
+	expiry, expExists := c.Expiry[key]
+	if expExists && time.Now().After(expiry) {
+		delete(c.Data, key)
+		delete(c.Expiry, key)
+		return "", false
+	}
+	return value, true
+}
+
 func (c *Cache) StartCleanup() {
 	for range time.Tick(CleanupInterval) {
 		now := time.Now()
+		c.mu.Lock()
 		for k, v := range c.Expiry {
 			if now.After(v) {
 				delete(c.Data, k)
 				delete(c.Expiry, k)
 			}
 		}
+		c.mu.Unlock()
 	}
 }
 
@@ -100,7 +129,10 @@ func runCommand(args []string, cache *Cache, conn net.Conn) error {
 		}
 		fmt.Fprintln(conn, res)
 	case "GET":
-		res := getKey(args, cache)
+		res, err := getKey(args, cache)
+		if err != nil {
+			return err
+		}
 		fmt.Fprintln(conn, res)
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
@@ -141,23 +173,18 @@ func setKey(args []string, cache *Cache) (string, error) {
 			return "", fmt.Errorf("invalid argument for 'SET'")
 		}
 	}
-	cache.Data[key] = value
-	if !expiry.IsZero() {
-		cache.Expiry[key] = expiry
-	}
+	cache.set(key, value, expiry)
 	return "OK", nil
 }
 
-func getKey(args []string, cache *Cache) string {
-	value, ok := cache.Data[args[1]]
-	expiry, expExists := cache.Expiry[args[1]]
+func getKey(args []string, cache *Cache) (string, error) {
+	if len(args) < 2 {
+		return "", fmt.Errorf("GET requires a 'value' parameter")
+	}
+	value, ok := cache.get(args[1])
 	if !ok {
-		return "(nil)"
-	} else if expExists && time.Now().After(expiry) {
-		delete(cache.Data, args[1])
-		delete(cache.Expiry, args[1])
-		return "(nil)"
+		return "(nil)", nil
 	} else {
-		return value
+		return value, nil
 	}
 }
